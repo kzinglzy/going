@@ -3,6 +3,7 @@ package going
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -23,22 +24,38 @@ type Codec struct {
 	RequestId uint64
 	DataSize  uint16
 	Data      []byte
-	// the following data won't be transmited
+	// following data won't be transmited
 	Addr *net.UDPAddr
+}
+
+type Request struct {
+	ID   uint64 `json:"id"`   // request peer id
+	Body string `json:"body"` // request content
+}
+
+type Response struct {
+	Code uint16 `json:"code"`
+	Body string `json:"body"`
 }
 
 // communicate method
 const (
-	METHOD_REGISTRY     = uint16(1)
-	METHOD_REGISTRY_OK  = uint16(2)
-	METHOD_GET_PEERS    = uint16(3)
-	METHOD_GET_PEERS_OK = uint16(4)
+	// client to server
+	METHOD_RESPONSE    = uint16(1)
+	METHOD_REGISTRY    = uint16(2)
+	METHOD_GET_PEERS   = uint16(3) // TODO, is this required
+	METHOD_SEARCH_PEER = uint16(4)
+
+	// client to client
+	METHOD_SEND_MESSAGE = uint16(1000)
 )
 
 // response code
 const (
-	CODE_REQUEST_SUCCEED = uint16(1)
-	CODE_INVALID_PARAM   = uint16(2)
+	CODE_REQUEST_SUCCEED       = uint16(1)
+	CODE_INVALID_PARAM         = uint16(2)
+	CODE_INTERNAL_SERVER_ERROR = uint16(3)
+	CODE_NOT_FOUND             = uint16(4)
 )
 
 func (c *Codec) Send(conn *net.UDPConn) {
@@ -107,4 +124,18 @@ func Decode(bts []byte, addr *net.UDPAddr) (*Codec, error) {
 	copy(c.Data, bts[CODEC_HEADER_LEN:])
 	c.Addr = addr
 	return c, nil
+}
+
+func (r *Request) Serialize() []byte {
+	bytes, err := json.Marshal(r)
+	if err != nil {
+		panic(fmt.Sprintf("unmarshal object %v %s", r, err))
+	}
+	return bytes
+}
+
+func DeserializeRequest(bytes []byte) (*Request, error) {
+	var req = new(Request)
+	err := json.Unmarshal(bytes, req)
+	return req, err
 }

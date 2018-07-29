@@ -3,6 +3,7 @@ package going
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"time"
@@ -37,7 +38,7 @@ func (c *client) Request(method uint16, data []byte, addr *net.UDPAddr) (resp *R
 	select {
 	case rp_codec := <-rsponseChan:
 		err = json.Unmarshal(rp_codec.Data, &resp)
-	case <-time.After(5 * time.Second):
+	case <-time.After(2 * time.Second):
 		err = errors.New("client request timeout")
 	}
 	return
@@ -48,9 +49,49 @@ func (c *client) Close() {
 	c.c.Close()
 }
 
+func (c *client) SendMessage(peerId uint64, content string) error {
+	peer, err := c.dialPeer(peerId)
+	if err != nil {
+		return err
+	}
+	resp, err := c.Request(METHOD_SEND_MESSAGE, []byte(content), peer.Addr)
+	if err != nil {
+		return err
+	}
+	if resp.Code != CODE_REQUEST_SUCCEED {
+		return errors.New(fmt.Sprintf("cannt sending message to %d, err: %s", peer.ID, err))
+	}
+	return nil
+}
+
+func (c *client) HandleMessage() {
+
+}
+
+func (c *client) dialPeer(peerId uint64) (*Peer, error) {
+	peer, isExist := c.peers[peerId]
+	if !isExist {
+		p := Peer{ID: peerId}
+		req := Request{ID: c.id, Body: string(p.Serialize())}
+		resp, err := c.Request(METHOD_SEARCH_PEER, req.Serialize(), c.serverAddr)
+		if err != nil {
+			return nil, err
+		}
+		if resp.Code != CODE_REQUEST_SUCCEED {
+			return nil, errors.New("search peers failed: " + resp.Body)
+		}
+		peer, err = DeserializePeer([]byte(resp.Body))
+		if err != nil {
+			return nil, err
+		}
+		c.peers[peer.ID] = peer
+	}
+	return peer, nil
+}
+
 func (c *client) registry() error {
-	data, _ := json.Marshal(Request{ID: c.id})
-	resp, err := c.Request(METHOD_REGISTRY, data, c.serverAddr)
+	data := Request{ID: c.id}
+	resp, err := c.Request(METHOD_REGISTRY, data.Serialize(), c.serverAddr)
 	if err != nil {
 		return err
 	}
@@ -126,15 +167,6 @@ func (c *client) getClostestPeers() error {
 	}
 	return nil
 }
-
-// func (c *client) DialPeer(Peer) {
-// 	if Peer.id in c.clietns {
-// 		// dial direct
-// 	} else {
-// 		// 1. dial to server and get the address
-// 		// 2. dial
-// 	}
-// }
 
 func NewClient(localAddr string, serverAddr string) (*client, error) {
 	c := client{

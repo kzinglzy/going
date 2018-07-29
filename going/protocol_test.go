@@ -1,11 +1,10 @@
 package going
 
 import (
-	"fmt"
 	"net"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestProtocol(t *testing.T) {
@@ -21,12 +20,8 @@ func TestProtocol(t *testing.T) {
 	}
 
 	bts, err := c.Encode()
-	if err != nil {
-		fmt.Println("err:", err)
-	}
+	require.Nil(t, err)
 	new_codec, err := Decode(bts, addr)
-	if err != nil {
-		fmt.Println("err:", err)
-	}
-	assert.Equal(t, c, new_codec, "encode or decode failed")
+	require.Nil(t, err)
+	require.Equal(t, c, new_codec, "encode or decode failed")
 }
