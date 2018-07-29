@@ -58,7 +58,6 @@ func (s *server) response(method uint16, code uint16, body string, requestId uin
 }
 
 func (s *server) handle(c *Codec) {
-	log.Printf("handle msg from %s, method %d\n", c.Addr, c.Method)
 	var (
 		code uint16 = CODE_REQUEST_SUCCEED
 		body string
@@ -72,6 +71,7 @@ func (s *server) handle(c *Codec) {
 			body = "invalid registry reqeust body" + err.Error()
 
 		} else {
+			// TODO. filter duplicated perr
 			s.clients[req.ID] = c.Addr
 			log.Println("registry ", c.Addr, req.ID)
 		}
