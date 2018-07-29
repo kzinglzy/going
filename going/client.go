@@ -107,7 +107,7 @@ func (c *client) readLoop() {
 	}
 }
 
-func (c *client) searchPeers() error {
+func (c *client) getClostestPeers() error {
 	resp, err := c.Request(METHOD_GET_PEERS, nil, c.serverAddr)
 	if err != nil {
 		return err
@@ -126,6 +126,15 @@ func (c *client) searchPeers() error {
 	}
 	return nil
 }
+
+// func (c *client) DialPeer(Peer) {
+// 	if Peer.id in c.clietns {
+// 		// dial direct
+// 	} else {
+// 		// 1. dial to server and get the address
+// 		// 2. dial
+// 	}
+// }
 
 func NewClient(localAddr string, serverAddr string) (*client, error) {
 	c := client{
@@ -153,7 +162,7 @@ func NewClient(localAddr string, serverAddr string) (*client, error) {
 		return nil, err
 	}
 
-	err = c.searchPeers()
+	err = c.getClostestPeers()
 	if err != nil {
 		c.Close()
 		return nil, err

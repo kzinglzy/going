@@ -11,7 +11,7 @@ import (
 	"github.com/sony/sonyflake"
 )
 
-// Codec does a encoding and decoding as a commuticate protocol
+// Codec does a encoding and decoding as a transmission protocol
 // The data format:
 //  | header                                  | body
 //  | uint16         | uint64     | uint16    | bytes |
@@ -23,7 +23,8 @@ type Codec struct {
 	RequestId uint64
 	DataSize  uint16
 	Data      []byte
-	Addr      *net.UDPAddr // 不参与网络传送
+	// the following data won't be transmited
+	Addr *net.UDPAddr
 }
 
 // communicate method
@@ -51,6 +52,7 @@ func (c *Codec) Send(conn *net.UDPConn) {
 	}
 }
 
+// unique id generator by snoyflake algorithm
 var sf *sonyflake.Sonyflake = sonyflake.NewSonyflake(sonyflake.Settings{})
 
 func (c *Codec) GenRequestId() uint64 {
