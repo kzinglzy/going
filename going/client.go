@@ -20,6 +20,10 @@ type client struct {
 	exit       bool
 }
 
+func (c *client) Send(codec *Codec) {
+	c.writeQueue <- codec
+}
+
 func (c *client) Request(method uint16, data []byte, addr *net.UDPAddr) (resp *Response, err error) {
 	codec := Codec{
 		Method: method,
@@ -32,7 +36,7 @@ func (c *client) Request(method uint16, data []byte, addr *net.UDPAddr) (resp *R
 	c.readQueue[reqId] = rsponseChan
 	defer delete(c.readQueue, reqId)
 
-	c.writeQueue <- &codec
+	c.Send(&codec)
 
 	// wait for response
 	select {
@@ -54,18 +58,21 @@ func (c *client) SendMessage(peerId uint64, content string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := c.Request(METHOD_SEND_MESSAGE, []byte(content), peer.Addr)
-	if err != nil {
-		return err
+	codec := Codec{
+		Method: METHOD_SEND_MESSAGE,
+		Data:   []byte(content),
+		Addr:   peer.Addr,
 	}
-	if resp.Code != CODE_REQUEST_SUCCEED {
-		return errors.New(fmt.Sprintf("cannt sending message to %d, err: %s", peer.ID, err))
-	}
+	c.Send(&codec)
 	return nil
 }
 
-func (c *client) HandleMessage() {
-
+func (c *client) HandleMessage(codec *Codec, addr *net.UDPAddr) error {
+	// 封装 codec 和 addr?
+	// 要不要增加to conenct, 在send message 前先conenct 要发消息的client?
+	// 如果收到不再 conenct 列表里的, 那就拒绝他?
+	log.Println(fmt.Sprintf("received message %s from %s", string(codec.Data), addr))
+	return nil
 }
 
 func (c *client) dialPeer(peerId uint64) (*Peer, error) {
@@ -141,9 +148,13 @@ func (c *client) readLoop() {
 		}
 
 		if addr.String() == c.serverAddr.String() {
-			// server request
+			// server to client
 		} else {
-			// other client request
+			// client to  client
+			switch codec.Method {
+			case METHOD_SEND_MESSAGE:
+				c.HandleMessage(codec, addr)
+			}
 		}
 	}
 }

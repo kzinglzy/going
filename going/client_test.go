@@ -3,6 +3,7 @@ package going
 import (
 	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/bouk/monkey"
 	"github.com/stretchr/testify/assert"
@@ -55,7 +56,6 @@ func TestNewClient(t *testing.T) {
 
 func TestClientDialPeer(t *testing.T) {
 	defer mockNewPeerId()()
-
 	ca, err := NewClient(localAddressA, serverAddr)
 	require.Nil(t, err)
 	defer ca.Close()
@@ -72,4 +72,18 @@ func TestClientDialPeer(t *testing.T) {
 	assert.Equal(t, cb.localAddr, peer.Addr)
 	_, found = ca.peers[cb.id]
 	assert.True(t, found)
+}
+
+func TestClientSendingMessage(t *testing.T) {
+	defer mockNewPeerId()()
+	ca, err := NewClient(localAddressA, serverAddr)
+	require.Nil(t, err)
+	defer ca.Close()
+	cb, err := NewClient(localAddressB, serverAddr)
+	require.Nil(t, err)
+	defer cb.Close()
+
+	err = ca.SendMessage(cb.id, "hello world")
+	require.Nil(t, err)
+	time.Sleep(time.Second * 5)
 }
