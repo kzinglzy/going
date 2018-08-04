@@ -14,15 +14,6 @@ type server struct {
 	writeQueue chan *Codec             // to send msg
 }
 
-type Request struct {
-	ID uint64 `json:"id"`
-}
-
-type Response struct {
-	Code uint16 `json:"code"`
-	Body string `json:"body"`
-}
-
 func (s *server) listen() {
 	for !s.exit {
 		buf := make([]byte, 65535)
@@ -54,28 +45,24 @@ func (s *server) response(method uint16, code uint16, body string, requestId uin
 		Addr:      addr,
 		RequestId: requestId,
 	}
+	s.writeQueue <- &resp
 	return &resp
 }
 
 func (s *server) handle(c *Codec) {
-	var (
-		code uint16 = CODE_REQUEST_SUCCEED
-		body string
-	)
+	var body string
+
 	switch c.Method {
 	case METHOD_REGISTRY:
-		var req Request
-		err := json.Unmarshal(c.Data, &req)
+		req, err := DeserializeRequest(c.Data)
 		if err != nil {
-			code = CODE_INVALID_PARAM
 			body = "invalid registry reqeust body" + err.Error()
-
+			s.response(METHOD_RESPONSE, CODE_INVALID_PARAM, body, c.RequestId, c.Addr)
 		} else {
-			// TODO. filter duplicated perr
 			s.clients[req.ID] = c.Addr
-			log.Println("registry ", c.Addr, req.ID)
+			log.Println("client registry ", c.Addr, req.ID)
+			s.response(METHOD_RESPONSE, CODE_REQUEST_SUCCEED, body, c.RequestId, c.Addr)
 		}
-		s.writeQueue <- s.response(METHOD_REGISTRY_OK, code, body, c.RequestId, c.Addr)
 	case METHOD_GET_PEERS:
 		addrs := make(map[uint64]string)
 		for peerId, udpAddr := range s.clients {
@@ -83,11 +70,32 @@ func (s *server) handle(c *Codec) {
 		}
 		bytes, err := json.Marshal(addrs)
 		if err != nil {
-			log.Println("json marshal peers failed ", err)
+			s.response(METHOD_RESPONSE, CODE_INTERNAL_SERVER_ERROR, "marshal peers failed", c.RequestId, c.Addr)
+		} else {
+			body = string(bytes)
+			s.response(METHOD_RESPONSE, CODE_REQUEST_SUCCEED, body, c.RequestId, c.Addr)
+		}
+	case METHOD_SEARCH_PEER:
+		req, err := DeserializeRequest(c.Data)
+		if err != nil {
+			body = "invalid search peer body" + err.Error()
+			s.response(METHOD_RESPONSE, CODE_INVALID_PARAM, body, c.RequestId, c.Addr)
 			return
 		}
-		body = string(bytes)
-		s.writeQueue <- s.response(METHOD_GET_PEERS_OK, CODE_REQUEST_SUCCEED, body, c.RequestId, c.Addr)
+		peer, err := DeserializePeer([]byte(req.Body))
+		if err != nil {
+			s.response(METHOD_RESPONSE, CODE_INVALID_PARAM, body, c.RequestId, c.Addr)
+			return
+		}
+		peerUDPAddr, found := s.clients[peer.ID]
+		if !found {
+			body = "cant found corresponding peer"
+			s.response(METHOD_RESPONSE, CODE_NOT_FOUND, body, c.RequestId, c.Addr)
+		} else {
+			peer.Addr = peerUDPAddr
+			body = string(peer.Serialize())
+			s.response(METHOD_RESPONSE, CODE_REQUEST_SUCCEED, body, c.RequestId, c.Addr)
+		}
 	}
 }
 

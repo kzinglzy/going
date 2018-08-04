@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewServerRegistry(t *testing.T) {
@@ -15,32 +16,27 @@ func TestNewServerRegistry(t *testing.T) {
 	udpAddr, _ := net.ResolveUDPAddr("udp", addr)
 
 	s, err := NewServer(addr)
-	if err != nil {
-		t.Error(err)
-	}
+	require.Nil(t, err)
 	conn, err := net.Dial("udp", port)
-	if err != nil {
-		t.Error(err)
-	}
+	require.Nil(t, err)
 
 	rq_id := uint64(123)
-	rq_data, _ := json.Marshal(Request{ID: rq_id})
+	rq := Request{ID: rq_id}
+	rq_data := rq.Serialize()
 	request := Codec{
 		Method:   METHOD_REGISTRY,
 		DataSize: uint16(len(rq_data)),
 		Data:     rq_data,
 	}
 	bts, err := request.Encode()
-	if err != nil {
-		t.Error(err)
-	}
+	require.Nil(t, err)
 	conn.Write(bts)
 
 	// test response
 	data := make([]byte, 1000)
 	conn.Read(data)
 	codec, _ := Decode(data, udpAddr)
-	assert.Equal(t, METHOD_REGISTRY_OK, codec.Method)
+	assert.Equal(t, METHOD_RESPONSE, codec.Method)
 	assert.Equal(t, request.RequestId, codec.RequestId)
 
 	localAddr := conn.LocalAddr().(*net.UDPAddr)
@@ -48,9 +44,7 @@ func TestNewServerRegistry(t *testing.T) {
 
 	var rp Response
 	err = json.Unmarshal(codec.Data, &rp)
-	if err != nil {
-		t.Error(err)
-	}
+	require.Nil(t, err)
 	assert.Equal(t, CODE_REQUEST_SUCCEED, rp.Code)
 	assert.Equal(t, "", rp.Body)
 

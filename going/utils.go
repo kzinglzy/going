@@ -36,7 +36,7 @@ func GetLocalIP() net.IP {
 }
 
 func str2uint64(s string) uint64 {
-	n, err := strconv.ParseInt(s, 10, 64)
+	n, err := strconv.ParseUint(s, 10, 64)
 	if err != nil {
 		panic(err)
 	}
