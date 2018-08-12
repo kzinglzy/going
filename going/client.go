@@ -9,6 +9,10 @@ import (
 	"time"
 )
 
+type Handler interface {
+	HandleData(*Conn)
+}
+
 type client struct {
 	id         uint64
 	c          *net.UDPConn
@@ -17,7 +21,13 @@ type client struct {
 	serverAddr *net.UDPAddr
 	readQueue  map[uint64]chan *Codec
 	writeQueue chan *Codec
+	handler    Handler
 	exit       bool
+}
+
+type Conn struct {
+	*client
+	codec *Codec
 }
 
 func (c *client) Send(codec *Codec) {
@@ -58,21 +68,21 @@ func (c *client) SendMessage(peerId uint64, content string) error {
 	if err != nil {
 		return err
 	}
+	m := Message{
+		Data:     []byte(content),
+		FromPeer: c.GetCurrentPeer(),
+	}
 	codec := Codec{
 		Method: METHOD_SEND_MESSAGE,
-		Data:   []byte(content),
+		Data:   m.Serialize(),
 		Addr:   peer.Addr,
 	}
 	c.Send(&codec)
 	return nil
 }
 
-func (c *client) HandleMessage(codec *Codec, addr *net.UDPAddr) error {
-	// 封装 codec 和 addr?
-	// 要不要增加to conenct, 在send message 前先conenct 要发消息的client?
-	// 如果收到不再 conenct 列表里的, 那就拒绝他?
-	log.Println(fmt.Sprintf("received message %s from %s", string(codec.Data), addr))
-	return nil
+func (c *client) GetCurrentPeer() *Peer {
+	return &Peer{ID: c.id, Addr: c.localAddr}
 }
 
 func (c *client) dialPeer(peerId uint64) (*Peer, error) {
@@ -153,7 +163,13 @@ func (c *client) readLoop() {
 			// client to  client
 			switch codec.Method {
 			case METHOD_SEND_MESSAGE:
-				c.HandleMessage(codec, addr)
+				// check if conn is legal?
+				// should send conenct request before communicate?
+				conn := Conn{
+					c,
+					codec,
+				}
+				c.handler.HandleData(&conn)
 			}
 		}
 	}
@@ -179,13 +195,23 @@ func (c *client) getClostestPeers() error {
 	return nil
 }
 
-func NewClient(localAddr string, serverAddr string) (*client, error) {
+func (cn *Conn) GetMessage() *Message {
+	m, err := DeserializeMessage(cn.codec.Data)
+	if err != nil {
+		log.Fatal(fmt.Sprintf("Receive inlegal message %v %s", m, err))
+		return nil
+	}
+	return m
+}
+
+func NewClient(localAddr string, serverAddr string, handler Handler) (*client, error) {
 	c := client{
 		id:         NewPeerId(),
 		peers:      make(map[uint64]*Peer),
 		readQueue:  make(map[uint64]chan *Codec),
 		writeQueue: make(chan *Codec, 1000),
 		exit:       false,
+		handler:    handler,
 	}
 	c.localAddr, _ = net.ResolveUDPAddr("udp", localAddr)
 	c.serverAddr, _ = net.ResolveUDPAddr("udp", serverAddr)

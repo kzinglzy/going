@@ -1,6 +1,8 @@
 package going
 
 import (
+	"fmt"
+	"log"
 	"math/rand"
 	"testing"
 	"time"
@@ -21,6 +23,23 @@ func init() {
 	}
 }
 
+type DefaultHandler struct{}
+type ResponseHandler struct{}
+
+func (h *DefaultHandler) HandleData(c *Conn) {
+	m := c.GetMessage()
+	log.Println(fmt.Sprintf("%s>[%s]Say: %s", c.localAddr, m.FromPeer.Addr, m.Data))
+}
+
+func (h *ResponseHandler) HandleData(c *Conn) {
+	m := c.GetMessage()
+	log.Println(fmt.Sprintf("%s>[%s]Say: %s", c.localAddr, m.FromPeer.Addr, m.Data))
+	c.SendMessage(m.FromPeer.ID, "pong!")
+}
+
+var defaultHandler Handler = new(DefaultHandler)
+var responseHandler Handler = new(ResponseHandler)
+
 // mockNewPeerId patch NewPeerId to simulate mulit clients
 func mockNewPeerId() func() {
 	monkey.Patch(NewPeerId, func() uint64 {
@@ -32,10 +51,10 @@ func mockNewPeerId() func() {
 }
 
 func TestNewClient(t *testing.T) {
-	ca, err := NewClient(localAddressA, serverAddr)
+	ca, err := NewClient(localAddressA, serverAddr, defaultHandler)
 	defer ca.Close()
 	require.Nil(t, err)
-	NewClient(localAddressA, serverAddr) // same ip will considerd to be the same client
+	NewClient(localAddressA, serverAddr, defaultHandler) // same ip will considerd to be the same client
 	assert.Equal(t, 1, len(ca.peers))
 	for _, peer := range ca.peers {
 		assert.Equal(t, localAddressA, peer.Addr.String(), "invalid address")
@@ -43,7 +62,7 @@ func TestNewClient(t *testing.T) {
 
 	defer mockNewPeerId()()
 
-	cb, err := NewClient(localAddressB, serverAddr)
+	cb, err := NewClient(localAddressB, serverAddr, defaultHandler)
 	defer cb.Close()
 	require.Nil(t, err)
 	assert.Equal(t, 2, len(cb.peers))
@@ -56,10 +75,10 @@ func TestNewClient(t *testing.T) {
 
 func TestClientDialPeer(t *testing.T) {
 	defer mockNewPeerId()()
-	ca, err := NewClient(localAddressA, serverAddr)
+	ca, err := NewClient(localAddressA, serverAddr, defaultHandler)
 	require.Nil(t, err)
 	defer ca.Close()
-	cb, err := NewClient(localAddressB, serverAddr)
+	cb, err := NewClient(localAddressB, serverAddr, defaultHandler)
 	require.Nil(t, err)
 	defer cb.Close()
 
@@ -76,14 +95,15 @@ func TestClientDialPeer(t *testing.T) {
 
 func TestClientSendingMessage(t *testing.T) {
 	defer mockNewPeerId()()
-	ca, err := NewClient(localAddressA, serverAddr)
+	ca, err := NewClient(localAddressA, serverAddr, defaultHandler)
 	require.Nil(t, err)
 	defer ca.Close()
-	cb, err := NewClient(localAddressB, serverAddr)
+
+	cb, err := NewClient(localAddressB, serverAddr, responseHandler)
 	require.Nil(t, err)
 	defer cb.Close()
 
-	err = ca.SendMessage(cb.id, "hello world")
+	err = ca.SendMessage(cb.id, "ping!")
 	require.Nil(t, err)
-	time.Sleep(time.Second * 5)
+	time.Sleep(time.Second * 1)
 }
