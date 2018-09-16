@@ -9,6 +9,10 @@ import (
 	"time"
 )
 
+type Handler interface {
+	HandleData(*Conn)
+}
+
 type client struct {
 	id         uint64
 	c          *net.UDPConn
@@ -17,7 +21,17 @@ type client struct {
 	serverAddr *net.UDPAddr
 	readQueue  map[uint64]chan *Codec
 	writeQueue chan *Codec
+	handler    Handler
 	exit       bool
+}
+
+type Conn struct {
+	*client
+	codec *Codec
+}
+
+func (c *client) Send(codec *Codec) {
+	c.writeQueue <- codec
 }
 
 func (c *client) Request(method uint16, data []byte, addr *net.UDPAddr) (resp *Response, err error) {
@@ -32,7 +46,7 @@ func (c *client) Request(method uint16, data []byte, addr *net.UDPAddr) (resp *R
 	c.readQueue[reqId] = rsponseChan
 	defer delete(c.readQueue, reqId)
 
-	c.writeQueue <- &codec
+	c.Send(&codec)
 
 	// wait for response
 	select {
@@ -54,18 +68,21 @@ func (c *client) SendMessage(peerId uint64, content string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := c.Request(METHOD_SEND_MESSAGE, []byte(content), peer.Addr)
-	if err != nil {
-		return err
+	m := Message{
+		Data:     []byte(content),
+		FromPeer: c.GetCurrentPeer(),
 	}
-	if resp.Code != CODE_REQUEST_SUCCEED {
-		return errors.New(fmt.Sprintf("cannt sending message to %d, err: %s", peer.ID, err))
+	codec := Codec{
+		Method: METHOD_SEND_MESSAGE,
+		Data:   m.Serialize(),
+		Addr:   peer.Addr,
 	}
+	c.Send(&codec)
 	return nil
 }
 
-func (c *client) HandleMessage() {
-
+func (c *client) GetCurrentPeer() *Peer {
+	return &Peer{ID: c.id, Addr: c.localAddr}
 }
 
 func (c *client) dialPeer(peerId uint64) (*Peer, error) {
@@ -141,9 +158,19 @@ func (c *client) readLoop() {
 		}
 
 		if addr.String() == c.serverAddr.String() {
-			// server request
+			// server to client
 		} else {
-			// other client request
+			// client to  client
+			switch codec.Method {
+			case METHOD_SEND_MESSAGE:
+				// check if conn is legal?
+				// should send conenct request before communicate?
+				conn := Conn{
+					c,
+					codec,
+				}
+				c.handler.HandleData(&conn)
+			}
 		}
 	}
 }
@@ -168,13 +195,23 @@ func (c *client) getClostestPeers() error {
 	return nil
 }
 
-func NewClient(localAddr string, serverAddr string) (*client, error) {
+func (cn *Conn) GetMessage() *Message {
+	m, err := DeserializeMessage(cn.codec.Data)
+	if err != nil {
+		log.Fatal(fmt.Sprintf("Receive inlegal message %v %s", m, err))
+		return nil
+	}
+	return m
+}
+
+func NewClient(localAddr string, serverAddr string, handler Handler) (*client, error) {
 	c := client{
 		id:         NewPeerId(),
 		peers:      make(map[uint64]*Peer),
 		readQueue:  make(map[uint64]chan *Codec),
 		writeQueue: make(chan *Codec, 1000),
 		exit:       false,
+		handler:    handler,
 	}
 	c.localAddr, _ = net.ResolveUDPAddr("udp", localAddr)
 	c.serverAddr, _ = net.ResolveUDPAddr("udp", serverAddr)
